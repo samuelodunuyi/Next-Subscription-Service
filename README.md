@@ -1,36 +1,66 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# subscription-platform
 
-## Getting Started
+Subscription billing API. Next.js route handlers, Prisma, Postgres.
 
-First, run the development server:
+## Running it
 
-```bash
+Copy `.env.example` to `.env` and fill in `DATABASE_URL` and `PAYMENT_WEBHOOK_SECRET`.
+
+```
+npm install
+npm run db:deploy
+npm run db:seed
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+The seed adds three plans. Set `ADMIN_EMAIL` and `ADMIN_PASSWORD` first if you want an admin account.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+`npm test` runs the unit tests. `npm run test:integration` needs the database.
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Endpoints
 
-## Learn More
+```
+POST  /api/auth/register
+POST  /api/auth/login
+POST  /api/auth/logout
+POST  /api/auth/logout-all
+POST  /api/auth/password
+GET   /api/auth/me
 
-To learn more about Next.js, take a look at the following resources:
+GET   /api/plans
+GET   /api/plans/:id
+POST  /api/plans              admin
+PATCH /api/plans/:id          admin
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+GET   /api/subscriptions
+POST  /api/subscriptions      { planId }
+GET   /api/subscriptions/me
+POST  /api/subscriptions/cancel
+POST  /api/subscriptions/resume
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+GET   /api/payments
+POST  /api/payments
+GET   /api/payments/:id
+GET   /api/payments/:id/events
 
-## Deploy on Vercel
+POST  /api/webhooks/payments
+GET   /api/health
+```
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## Payments
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+There's no real payment provider hooked up yet. Subscribing creates a pending subscription and a pending payment. A webhook call marks the payment as paid, and that activates the subscription. To fake it locally:
+
+```
+npm run webhook:send -- <paymentId> succeeded
+```
+
+The webhook is signed with `PAYMENT_WEBHOOK_SECRET`: the `x-webhook-signature` header is `t=<unix time>,v1=<hmac sha256 of "t.body">`. The body is `{ id, type, data: { paymentId, amount, currency } }`, where type is `payment.succeeded`, `payment.failed` or `payment.refunded`. The amount and currency have to match the payment or it gets rejected and flagged for a manual refund.
+
+Cancelling keeps access until the end of the period. Send `{ "immediate": true }` to end it now, or call `/resume` to undo it.
+
+## Production
+
+- Set `TRUSTED_PROXY_HOPS` to the number of proxies in front of the app (0 if none). Without it login and register return 500.
+- Run `npm run maintenance` every hour or so.
+- There's no email verification or password reset yet.
